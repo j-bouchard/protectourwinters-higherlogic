@@ -1,0 +1,43 @@
+@RestResource(urlMapping='/higherlogic/activity')
+global without sharing class HigherLogicActivityWebhook {
+
+    @HttpPost
+    global static void handlePost() {
+        RestRequest req = RestContext.request;
+
+        String raw = (req.requestBody == null) ? null : req.requestBody.toString();
+        System.debug(LoggingLevel.INFO, '[HL] Incoming request. rawBody=' + raw);
+
+        if (String.isBlank(raw)) {
+            System.debug(LoggingLevel.WARN, '[HL] Missing body');
+            RestContext.response.statusCode = 400;
+            RestContext.response.responseBody = Blob.valueOf('Missing body');
+            return;
+        }
+
+        Map<String, Object> payload =
+            (Map<String, Object>) JSON.deserializeUntyped(raw);
+
+        String activityCode = HigherLogicActivityProcessor.asString(payload.get('ActivityCode'));
+        String objectType   = HigherLogicActivityProcessor.asString(payload.get('ObjectType'));
+
+        System.debug(LoggingLevel.INFO, '[HL] ActivityCode=' + activityCode + ', ObjectType=' + objectType);
+
+        HigherLogicActivityProcessor.Route route =
+            HigherLogicActivityProcessor.decideRoute(activityCode, objectType);
+
+        System.debug(LoggingLevel.INFO, '[HL] Route decided: ' + String.valueOf(route));
+
+        if (route == HigherLogicActivityProcessor.Route.IGNORE) {
+            RestContext.response.statusCode = 200;
+            RestContext.response.responseBody = Blob.valueOf('Ignored');
+            return;
+        }
+
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(route, payload));
+        System.debug(LoggingLevel.INFO, '[HL] Enqueued job. route=' + String.valueOf(route));
+
+        RestContext.response.statusCode = 200;
+        RestContext.response.responseBody = Blob.valueOf('OK: queued ' + String.valueOf(route));
+    }
+}
