@@ -1,10 +1,15 @@
 public without sharing class HigherLogicActivityProcessor {
 
+    @TestVisible private static final String STATUS_REGISTERED = 'Registered';
+    @TestVisible private static final String STATUS_ATTENDED   = 'Attended';
+
     public enum Route {
         CREATE_COMMUNITY_ACCOUNT,
         CREATE_USER_CONTACT,
         JOIN_COMMUNITY_LINK_CONTACT,
         CREATE_EVENT_CAMPAIGN,
+        REGISTER_FOR_EVENT,
+        ATTEND_EVENT,
         IGNORE
     }
 
@@ -25,6 +30,12 @@ public without sharing class HigherLogicActivityProcessor {
         if (code == 'eventcreate'
             || (code.contains('create') && (obj == 'calendarevent' || obj == 'event'))) {
             return Route.CREATE_EVENT_CAMPAIGN;
+        }
+        if (code.contains('attend')) {
+            return Route.ATTEND_EVENT;
+        }
+        if (code.contains('register') || code.contains('rsvp')) {
+            return Route.REGISTER_FOR_EVENT;
         }
         return Route.IGNORE;
     }
@@ -47,6 +58,10 @@ public without sharing class HigherLogicActivityProcessor {
                     linkContactToCommunityAccount(payload);
                 } else if (route == Route.CREATE_EVENT_CAMPAIGN) {
                     createOrUpsertCampaignForEvent(payload);
+                } else if (route == Route.REGISTER_FOR_EVENT) {
+                    setCampaignMemberStatus(payload, STATUS_REGISTERED);
+                } else if (route == Route.ATTEND_EVENT) {
+                    setCampaignMemberStatus(payload, STATUS_ATTENDED);
                 }
             } catch (Exception e) {
                 System.debug(LoggingLevel.ERROR,
@@ -265,6 +280,73 @@ public without sharing class HigherLogicActivityProcessor {
         if (campaignId != null && accountId != null) {
             createEventPartner(campaignId, accountId);
         }
+    }
+
+    // ------------------------------------------------
+    // 5) EVENT REGISTER / ATTEND -> CAMPAIGN MEMBER
+    // Speculative routing: exact HL ActivityCode strings not yet observed
+    // in live payloads. Uses contains('register') / contains('attend') so
+    // variants like EventRegister, RegistrationCreate, EventAttend,
+    // EventAttendanceCreate all route here.
+    // ------------------------------------------------
+    private static void setCampaignMemberStatus(Map<String, Object> payload, String status) {
+        String eventKey = pick(payload, new List<String>{
+            'EventKey', 'CalendarEventKey', 'ParentKey', 'Key'
+        });
+        if (String.isBlank(eventKey) || !hasCampaignField('HL_Event_ID__c')) {
+            System.debug(LoggingLevel.WARN,
+                '[HL] Cannot set CampaignMember status: missing eventKey or HL_Event_ID__c field');
+            return;
+        }
+        List<Campaign> camps = Database.query(
+            'SELECT Id FROM Campaign WHERE HL_Event_ID__c = :eventKey LIMIT 1'
+        );
+        if (camps.isEmpty()) {
+            System.debug(LoggingLevel.WARN,
+                '[HL] No Campaign found for eventKey=' + eventKey + '; cannot add member');
+            return;
+        }
+        Id campaignId = camps[0].Id;
+
+        String externalId = pick(payload, new List<String>{
+            'ContributorKey', 'ContributorMemberKey', 'ContactKey', 'AgentContactKey', 'Key'
+        });
+        String email = pick(payload, new List<String>{
+            'pb_emailaddress','Email','email','EmailAddress'
+        });
+        Contact match = findContactForUser(externalId, email);
+        Id contactId = (match != null) ? match.Id : createOrUpsertContactForUser(payload);
+        if (contactId == null) {
+            System.debug(LoggingLevel.WARN, '[HL] Could not resolve Contact for event member');
+            return;
+        }
+
+        seedCampaignMemberStatuses(campaignId);
+
+        List<CampaignMember> existing = [
+            SELECT Id, Status FROM CampaignMember
+            WHERE CampaignId = :campaignId AND ContactId = :contactId
+            LIMIT 1
+        ];
+        if (!existing.isEmpty()) {
+            CampaignMember cm = existing[0];
+            if (cm.Status == STATUS_ATTENDED && status == STATUS_REGISTERED) {
+                System.debug(LoggingLevel.INFO,
+                    '[HL] Skipping status downgrade from Attended to Registered');
+                return;
+            }
+            if (cm.Status != status) {
+                cm.Status = status;
+                update cm;
+            }
+            return;
+        }
+
+        insert new CampaignMember(
+            CampaignId = campaignId,
+            ContactId = contactId,
+            Status = status
+        );
     }
 
     @TestVisible

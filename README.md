@@ -42,6 +42,13 @@ Triggered when:
 ActivityCode exactly equals eventcreate, OR
 ActivityCode contains the word create AND ObjectType equals calendarevent or event
 
+Route 5: Register for Event / Attend Event
+Triggered when:
+ActivityCode contains `attend` (routes to Attend Event), OR
+ActivityCode contains `register` or `rsvp` (routes to Register for Event)
+
+Note: The exact HL ActivityCode strings for these two activities were not yet observable when this code was written (HL site not fully live). Matching uses `contains(...)` so variants like `EventRegister`, `RegistrationCreate`, `EventAttend`, `EventAttendanceCreate`, etc. all route correctly. Once live payloads are captured, the matching can be tightened.
+
 
 Route 1: Create Community Account
 This route creates or upserts a Salesforce Account to represent a Higher Logic community.
@@ -111,6 +118,34 @@ Before inserting, the code checks whether an npe5__Affiliation__c record already
 
 Step 4: Create the Affiliation
 If no existing affiliation is found, a new npe5__Affiliation__c record is inserted linking the Contact to the Account.
+
+Route 5: Register for Event / Attend Event
+This route adds a Contact as a CampaignMember on the Event Campaign, with Status reflecting the HL action.
+
+Reading Fields from the Payload
+Event ID - checks: EventKey, CalendarEventKey, ParentKey, Key
+HL External ID - checks: ContributorKey, ContributorMemberKey, ContactKey, AgentContactKey, Key
+Email - checks: pb_emailaddress, Email, email, EmailAddress
+
+Step 1: Find the Campaign
+The code queries for a Campaign where HL_Event_ID__c matches the Event ID. If no matching Campaign is found, processing stops and nothing is written. No placeholder Campaign is created.
+
+Step 2: Find or Create the Contact
+Uses the same three-step priority as Routes 2 and 3: HL_Contact_ID__c -> npe01__HomeEmail__c -> standard Email. If still not found, creates a new Contact from the payload.
+
+Step 3: Ensure CampaignMemberStatus values exist
+Calls the same idempotent seed helper used by Route 4 to guarantee `Registered` and `Attended` are valid statuses on the Campaign, even if the Campaign was created outside this integration.
+
+Step 4: Upsert the CampaignMember
+Looks up an existing CampaignMember by (CampaignId, ContactId). If found, updates Status; if not, inserts. Never creates duplicates for the same Contact on the same Campaign.
+
+Status mapping
+- Register for Event -> `Registered`
+- Attend Event -> `Attended`
+
+Downgrade guard: if an existing CampaignMember already has Status `Attended` and a late Register webhook arrives, the status is NOT downgraded to `Registered`. All other transitions (Registered -> Attended, insert with any status) are applied.
+
+Cancellations are not handled - HL does not appear to emit a webhook for cancelled/no-show status changes, so those must be managed manually in Salesforce.
 
 Route 4: Create Event Campaign
 This route creates or upserts a Salesforce Campaign to represent a Higher Logic event, and optionally links it to a community Account via a conference360 Event Partner record.

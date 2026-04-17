@@ -50,6 +50,26 @@ private class HigherLogicActivityProcessorTest {
             HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
             HigherLogicActivityProcessor.decideRoute('create', 'Event'));
     }
+    @IsTest static void decideRoute_registerForEvent() {
+        System.assertEquals(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            HigherLogicActivityProcessor.decideRoute('EventRegister', 'Event'));
+        System.assertEquals(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            HigherLogicActivityProcessor.decideRoute('RegistrationCreate', null));
+        System.assertEquals(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            HigherLogicActivityProcessor.decideRoute('EventRSVP', 'CalendarEvent'));
+    }
+    @IsTest static void decideRoute_attendEvent() {
+        System.assertEquals(
+            HigherLogicActivityProcessor.Route.ATTEND_EVENT,
+            HigherLogicActivityProcessor.decideRoute('EventAttend', 'Event'));
+        System.assertEquals(
+            HigherLogicActivityProcessor.Route.ATTEND_EVENT,
+            HigherLogicActivityProcessor.decideRoute('EventAttendanceCreate', 'EventAttendee'));
+    }
+
     @IsTest static void decideRoute_ignoreUnknown() {
         System.assertEquals(
             HigherLogicActivityProcessor.Route.IGNORE,
@@ -479,6 +499,109 @@ private class HigherLogicActivityProcessorTest {
         Test.stopTest();
         System.assertEquals(1, [SELECT COUNT() FROM conference360__Sponsor__c
             WHERE conference360__Account__c = :a.Id AND Event_Campaign__c = :pre.Id]);
+    }
+
+    // ===================================================
+    // Route 5 \u2014 Register / Attend \u2192 CampaignMember
+    // ===================================================
+    private static Campaign makeEventCampaign(String eventKey) {
+        Campaign c = new Campaign(
+            Name = 'Event ' + eventKey,
+            OKR_Type__c = 'fundraise',
+            HL_Event_Type__c = 'Chapter Meeting',
+            Host__c = 'Community Hosted',
+            StartDate = Date.today(),
+            HL_Event_ID__c = eventKey
+        );
+        insert c;
+        insert new CampaignMemberStatus(CampaignId = c.Id, Label = 'Registered',
+            SortOrder = 3, HasResponded = false);
+        insert new CampaignMemberStatus(CampaignId = c.Id, Label = 'Attended',
+            SortOrder = 4, HasResponded = true);
+        return c;
+    }
+
+    @IsTest static void route5_registerInsertsNewCampaignMember() {
+        HigherLogicConfig.override = buildCfg('s');
+        Campaign camp = makeEventCampaign('E-R5-1');
+        Contact c = new Contact(FirstName = 'R', LastName = 'One',
+            Email = 'r1@example.com', HL_Contact_ID__c = 'U-R5-1');
+        insert c;
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            new Map<String,Object>{ 'EventKey' => 'E-R5-1', 'ContributorKey' => 'U-R5-1' }));
+        Test.stopTest();
+        List<CampaignMember> cms = [SELECT Status FROM CampaignMember
+            WHERE CampaignId = :camp.Id AND ContactId = :c.Id];
+        System.assertEquals(1, cms.size());
+        System.assertEquals('Registered', cms[0].Status);
+    }
+
+    @IsTest static void route5_attendUpgradesExistingRegistered() {
+        HigherLogicConfig.override = buildCfg('s');
+        Campaign camp = makeEventCampaign('E-R5-2');
+        Contact c = new Contact(FirstName = 'R', LastName = 'Two',
+            Email = 'r2@example.com', HL_Contact_ID__c = 'U-R5-2');
+        insert c;
+        insert new CampaignMember(CampaignId = camp.Id, ContactId = c.Id, Status = 'Registered');
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.ATTEND_EVENT,
+            new Map<String,Object>{ 'EventKey' => 'E-R5-2', 'ContributorKey' => 'U-R5-2' }));
+        Test.stopTest();
+        CampaignMember cm = [SELECT Status FROM CampaignMember
+            WHERE CampaignId = :camp.Id AND ContactId = :c.Id];
+        System.assertEquals('Attended', cm.Status);
+    }
+
+    @IsTest static void route5_registerDoesNotDowngradeAttended() {
+        HigherLogicConfig.override = buildCfg('s');
+        Campaign camp = makeEventCampaign('E-R5-3');
+        Contact c = new Contact(FirstName = 'R', LastName = 'Three',
+            Email = 'r3@example.com', HL_Contact_ID__c = 'U-R5-3');
+        insert c;
+        insert new CampaignMember(CampaignId = camp.Id, ContactId = c.Id, Status = 'Attended');
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            new Map<String,Object>{ 'EventKey' => 'E-R5-3', 'ContributorKey' => 'U-R5-3' }));
+        Test.stopTest();
+        CampaignMember cm = [SELECT Status FROM CampaignMember
+            WHERE CampaignId = :camp.Id AND ContactId = :c.Id];
+        System.assertEquals('Attended', cm.Status);
+    }
+
+    @IsTest static void route5_createsContactIfMissing() {
+        HigherLogicConfig.override = buildCfg('s');
+        Campaign camp = makeEventCampaign('E-R5-4');
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            new Map<String,Object>{
+                'EventKey' => 'E-R5-4',
+                'ContributorKey' => 'U-R5-4',
+                'pb_emailaddress' => 'brand.new@example.com',
+                'pb_firstname' => 'Brand',
+                'pb_lastname' => 'New'
+            }));
+        Test.stopTest();
+        Contact created = [SELECT Id FROM Contact WHERE HL_Contact_ID__c = 'U-R5-4'];
+        System.assertEquals(1, [SELECT COUNT() FROM CampaignMember
+            WHERE CampaignId = :camp.Id AND ContactId = :created.Id AND Status = 'Registered']);
+    }
+
+    @IsTest static void route5_noCampaignIsNoOp() {
+        HigherLogicConfig.override = buildCfg('s');
+        Contact c = new Contact(FirstName = 'X', LastName = 'Y',
+            Email = 'xy@example.com', HL_Contact_ID__c = 'U-R5-5');
+        insert c;
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT,
+            new Map<String,Object>{ 'EventKey' => 'DOES-NOT-EXIST', 'ContributorKey' => 'U-R5-5' }));
+        Test.stopTest();
+        System.assertEquals(0, [SELECT COUNT() FROM CampaignMember WHERE ContactId = :c.Id]);
     }
 
     // ===================================================
