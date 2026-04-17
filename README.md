@@ -6,16 +6,14 @@ Higher Logic - Salesforce Integration
 
 1. Deploy with SFDX: `sf project deploy start -d force-app`.
 2. Populate the `HL_Webhook_Config.Default` custom metadata record:
-   - `Shared_Secret__c` - the secret value Higher Logic will send in the `X-HL-Token` header.
    - `Account_RecordType_DeveloperName__c` - defaults to `Higher_Logic_Community`; change if the RecordType uses a different DeveloperName.
    - `Campaign_Event_RecordType_DeveloperName__c` - defaults to `Event`; Campaign RecordType to assign to events created from Higher Logic.
-3. In Higher Logic, configure the outbound webhook to POST to `https://<instance>/services/apexrest/higherlogic/activity` with header `X-HL-Token: <secret>`.
+   - `Shared_Secret__c` is present but unused; reserved for future header-based auth if/when HL exposes header config.
+3. In Higher Logic, configure the outbound webhook to POST to the Site endpoint (something like `https://<site>.my.salesforce-sites.com/<site-prefix>/services/apexrest/higherlogic/activity`).
 
-## Authentication
+## Webhook Responses
 
-The webhook requires an `X-HL-Token` header matching `HL_Webhook_Config.Default.Shared_Secret__c`.
-- `503 Webhook not configured` - secret is blank in the org (populate it).
-- `401 Unauthorized` - header missing or mismatched.
+The endpoint is unauthenticated by design; it's on a Salesforce Site served by a Guest User, matching the contractor's original setup. Status codes:
 - `400 Missing body` / `400 Invalid JSON` - body validation.
 - `200 Ignored` - route resolved to IGNORE.
 - `200 OK: queued <Route>` - job enqueued successfully.

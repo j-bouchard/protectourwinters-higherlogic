@@ -111,61 +111,34 @@ private class HigherLogicActivityProcessorTest {
     }
 
     // ===================================================
-    // Webhook auth + body handling
     // ===================================================
-    private static RestRequest buildReq(String raw, String token) {
+    // Webhook body handling
+    // ===================================================
+    private static RestRequest buildReq(String raw) {
         RestRequest req = new RestRequest();
         req.requestURI = '/services/apexrest/higherlogic/activity';
         req.httpMethod = 'POST';
         if (raw != null) req.requestBody = Blob.valueOf(raw);
-        if (token != null) req.addHeader('X-HL-Token', token);
         return req;
     }
 
-    @IsTest static void webhook_noSecret_returns503() {
-        HigherLogicConfig.testOverride = buildCfg(null);
-        RestContext.request = buildReq('{}', 'x');
-        RestContext.response = new RestResponse();
-        HigherLogicActivityWebhook.handlePost();
-        System.assertEquals(503, RestContext.response.statusCode);
-    }
-
-    @IsTest static void webhook_missingToken_returns401() {
-        HigherLogicConfig.testOverride = buildCfg('s3cret');
-        RestContext.request = buildReq('{}', null);
-        RestContext.response = new RestResponse();
-        HigherLogicActivityWebhook.handlePost();
-        System.assertEquals(401, RestContext.response.statusCode);
-    }
-
-    @IsTest static void webhook_wrongToken_returns401() {
-        HigherLogicConfig.testOverride = buildCfg('s3cret');
-        RestContext.request = buildReq('{}', 'wrong');
-        RestContext.response = new RestResponse();
-        HigherLogicActivityWebhook.handlePost();
-        System.assertEquals(401, RestContext.response.statusCode);
-    }
-
     @IsTest static void webhook_blankBody_returns400() {
-        HigherLogicConfig.testOverride = buildCfg('s3cret');
-        RestContext.request = buildReq('', 's3cret');
+        RestContext.request = buildReq('');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
         System.assertEquals(400, RestContext.response.statusCode);
     }
 
     @IsTest static void webhook_badJson_returns400() {
-        HigherLogicConfig.testOverride = buildCfg('s3cret');
-        RestContext.request = buildReq('not valid json', 's3cret');
+        RestContext.request = buildReq('not valid json');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
         System.assertEquals(400, RestContext.response.statusCode);
     }
 
     @IsTest static void webhook_ignoreRoute_returns200() {
-        HigherLogicConfig.testOverride = buildCfg('s3cret');
         String body = JSON.serialize(new Map<String,Object>{ 'ActivityCode' => 'UnknownThing' });
-        RestContext.request = buildReq(body, 's3cret');
+        RestContext.request = buildReq(body);
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
         System.assertEquals(200, RestContext.response.statusCode);
@@ -179,7 +152,7 @@ private class HigherLogicActivityProcessorTest {
             'CommunityKey' => 'C-WEBHOOK-001',
             'CommunityName' => 'Webhook Test Community'
         });
-        RestContext.request = buildReq(body, 's3cret');
+        RestContext.request = buildReq(body);
         RestContext.response = new RestResponse();
         Test.startTest();
         HigherLogicActivityWebhook.handlePost();
