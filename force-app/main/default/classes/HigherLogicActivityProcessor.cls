@@ -180,11 +180,18 @@ public without sharing class HigherLogicActivityProcessor {
             return;
         }
         Contact match = findContactForUser(externalId, email);
-        if (match == null) {
-            System.debug(LoggingLevel.WARN, '[HL] No Contact found for externalId/email');
+        Id contactId;
+        if (match != null) {
+            contactId = match.Id;
+        } else {
+            System.debug(LoggingLevel.INFO, '[HL] No Contact match; creating from join payload');
+            contactId = createOrUpsertContactForUser(payload);
+        }
+        if (contactId == null) {
+            System.debug(LoggingLevel.WARN, '[HL] Could not resolve or create Contact for join payload');
             return;
         }
-        createAffiliation(match.Id, accountId);
+        createAffiliation(contactId, accountId);
     }
 
     private static void createAffiliation(Id contactId, Id accountId) {
@@ -227,6 +234,8 @@ public without sharing class HigherLogicActivityProcessor {
         c.Host__c = 'Community Hosted';
         if (hasCampaignField('Type'))   c.Type = 'Event';
         if (hasCampaignField('Status')) c.Status = 'Planned';
+        Id campRtId = getCampaignEventRecordTypeId();
+        if (campRtId != null) c.RecordTypeId = campRtId;
         c.StartDate = startDate;
         if (endDate != null) c.EndDate = endDate;
 
@@ -311,28 +320,44 @@ public without sharing class HigherLogicActivityProcessor {
     // ------------------------------------------------
     private static Id cachedAccountRecordTypeId;
     private static Boolean accountRecordTypeChecked = false;
+    private static Id cachedCampaignEventRecordTypeId;
+    private static Boolean campaignEventRecordTypeChecked = false;
 
     @TestVisible
     private static Id getAccountRecordTypeId() {
         if (accountRecordTypeChecked) return cachedAccountRecordTypeId;
         accountRecordTypeChecked = true;
-        String devName = HigherLogicConfig.get().accountRecordTypeDeveloperName;
+        cachedAccountRecordTypeId = lookupRecordTypeId(
+            Account.SObjectType, HigherLogicConfig.get().accountRecordTypeDeveloperName, 'Account');
+        return cachedAccountRecordTypeId;
+    }
+
+    @TestVisible
+    private static Id getCampaignEventRecordTypeId() {
+        if (campaignEventRecordTypeChecked) return cachedCampaignEventRecordTypeId;
+        campaignEventRecordTypeChecked = true;
+        cachedCampaignEventRecordTypeId = lookupRecordTypeId(
+            Campaign.SObjectType, HigherLogicConfig.get().campaignEventRecordTypeDeveloperName, 'Campaign');
+        return cachedCampaignEventRecordTypeId;
+    }
+
+    private static Id lookupRecordTypeId(Schema.SObjectType sot, String devName, String label) {
         if (String.isBlank(devName)) return null;
-        Schema.DescribeSObjectResult d = Account.SObjectType.getDescribe();
-        Schema.RecordTypeInfo rt = d.getRecordTypeInfosByDeveloperName().get(devName);
+        Schema.RecordTypeInfo rt = sot.getDescribe().getRecordTypeInfosByDeveloperName().get(devName);
         if (rt == null) {
             System.debug(LoggingLevel.WARN,
-                '[HL] Account RecordType not found for DeveloperName=' + devName);
+                '[HL] ' + label + ' RecordType not found for DeveloperName=' + devName);
             return null;
         }
-        cachedAccountRecordTypeId = rt.getRecordTypeId();
-        return cachedAccountRecordTypeId;
+        return rt.getRecordTypeId();
     }
 
     @TestVisible
     private static void resetRecordTypeCache() {
         cachedAccountRecordTypeId = null;
         accountRecordTypeChecked = false;
+        cachedCampaignEventRecordTypeId = null;
+        campaignEventRecordTypeChecked = false;
     }
 
     // ----------------------------

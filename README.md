@@ -8,6 +8,7 @@ Higher Logic - Salesforce Integration
 2. Populate the `HL_Webhook_Config.Default` custom metadata record:
    - `Shared_Secret__c` - the secret value Higher Logic will send in the `X-HL-Token` header.
    - `Account_RecordType_DeveloperName__c` - defaults to `Higher_Logic_Community`; change if the RecordType uses a different DeveloperName.
+   - `Campaign_Event_RecordType_DeveloperName__c` - defaults to `Event`; Campaign RecordType to assign to events created from Higher Logic.
 3. In Higher Logic, configure the outbound webhook to POST to `https://<instance>/services/apexrest/higherlogic/activity` with header `X-HL-Token: <secret>`.
 
 ## Authentication
@@ -97,13 +98,13 @@ Email - checks: pb_emailaddress, Email, email, EmailAddress
 Step 1: Find the Account
 The code queries for an Account where HL_Community_ID__c matches the Community ID from the payload. If no matching Account is found, processing stops here and nothing is written.
 
-Step 2: Find the Contact
+Step 2: Find or Create the Contact
 The code searches for a Contact using the same three-step priority as Route 2:
 1. By `HL_Contact_ID__c` (if field present and payload has User ID).
 2. By `npe01__HomeEmail__c` (if field present and payload has email).
 3. By standard `Email` as the final fallback.
 
-If no Contact is found after all three attempts, processing stops. This route will not create a new Contact.
+If no Contact is found after all three attempts, the route creates a new Contact from the join payload (same logic as Route 2, including defaulting LastName to `HL User` when blank).
 
 Step 3: Check for Existing Affiliation
 Before inserting, the code checks whether an npe5__Affiliation__c record already exists for this Contact and Account combination. If one already exists, the route skips the insert to avoid duplicates.
@@ -132,6 +133,8 @@ Host__c is set to Community Hosted
 The following fields are set if they exist in the org:
 Type is set to Event
 Status is set to Planned
+
+RecordType: The Campaign RecordType is resolved at runtime by DeveloperName from `HL_Webhook_Config.Default.Campaign_Event_RecordType_DeveloperName__c` (defaults to `Event`). If the RecordType is not found in the org, RecordTypeId is left unset.
 
 The Description field is built by combining ActivityDescription and LinkUrl: if both are present, the description becomes the ActivityDescription text followed by a new line and HL Link: and the URL.
 

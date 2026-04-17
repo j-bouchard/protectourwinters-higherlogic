@@ -10,4 +10,8 @@
         <field>Account_RecordType_DeveloperName__c</field>
         <value xsi:type="xsd:string">Higher_Logic_Community</value>
     </values>
+    <values>
+        <field>Campaign_Event_RecordType_DeveloperName__c</field>
+        <value xsi:type="xsd:string">Event</value>
+    </values>
 </CustomMetadata>

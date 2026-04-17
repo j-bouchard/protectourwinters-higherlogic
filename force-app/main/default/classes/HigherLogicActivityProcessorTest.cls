@@ -5,6 +5,7 @@ private class HigherLogicActivityProcessorTest {
         HigherLogicConfig.Settings s = new HigherLogicConfig.Settings();
         s.sharedSecret = secret;
         s.accountRecordTypeDeveloperName = 'Higher_Logic_Community';
+        s.campaignEventRecordTypeDeveloperName = 'Event';
         return s;
     }
 
@@ -323,7 +324,7 @@ private class HigherLogicActivityProcessorTest {
         System.assertEquals(0, [SELECT COUNT() FROM npe5__Affiliation__c WHERE npe5__Contact__c = :c.Id]);
     }
 
-    @IsTest static void route3_noContact_noOp() {
+    @IsTest static void route3_createsContactWhenNoMatch_thenAffiliates() {
         HigherLogicConfig.override = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-300');
         insert a;
@@ -332,11 +333,35 @@ private class HigherLogicActivityProcessorTest {
             HigherLogicActivityProcessor.Route.JOIN_COMMUNITY_LINK_CONTACT,
             new Map<String,Object>{
                 'CommunityKey' => 'C-300',
-                'ContributorKey' => 'NONE',
-                'pb_emailaddress' => 'nope@example.com'
+                'ContributorKey' => 'U-300-NEW',
+                'pb_emailaddress' => 'joiner@example.com',
+                'pb_firstname' => 'First',
+                'pb_lastname' => 'Joiner'
             }));
         Test.stopTest();
-        System.assertEquals(0, [SELECT COUNT() FROM npe5__Affiliation__c WHERE npe5__Organization__c = :a.Id]);
+        List<Contact> created = [SELECT Id, FirstName, LastName, Email
+                                 FROM Contact WHERE HL_Contact_ID__c = 'U-300-NEW'];
+        System.assertEquals(1, created.size());
+        System.assertEquals('First', created[0].FirstName);
+        System.assertEquals('joiner@example.com', created[0].Email);
+        System.assertEquals(1, [SELECT COUNT() FROM npe5__Affiliation__c
+            WHERE npe5__Contact__c = :created[0].Id AND npe5__Organization__c = :a.Id]);
+    }
+
+    @IsTest static void route3_createsContactWithDefaultLastName() {
+        HigherLogicConfig.override = buildCfg('s');
+        Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-310');
+        insert a;
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.JOIN_COMMUNITY_LINK_CONTACT,
+            new Map<String,Object>{
+                'CommunityKey' => 'C-310',
+                'ContributorKey' => 'U-310-ANON'
+            }));
+        Test.stopTest();
+        Contact c = [SELECT LastName FROM Contact WHERE HL_Contact_ID__c = 'U-310-ANON'];
+        System.assertEquals('HL User', c.LastName);
     }
 
     @IsTest static void route3_dedupesExistingAffiliation() {
@@ -419,10 +444,14 @@ private class HigherLogicActivityProcessorTest {
     // RecordType lookup
     // ===================================================
     @IsTest static void recordType_lookupExecutes() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.Settings s = buildCfg('s');
+        s.campaignEventRecordTypeDeveloperName = 'Event';
+        HigherLogicConfig.override = s;
         HigherLogicActivityProcessor.resetRecordTypeCache();
         HigherLogicActivityProcessor.getAccountRecordTypeId();
-        // second call hits cache
+        HigherLogicActivityProcessor.getCampaignEventRecordTypeId();
+        // second calls hit cache
         HigherLogicActivityProcessor.getAccountRecordTypeId();
+        HigherLogicActivityProcessor.getCampaignEventRecordTypeId();
     }
 }
