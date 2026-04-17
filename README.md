@@ -136,6 +136,13 @@ Status is set to Planned
 
 RecordType: The Campaign RecordType is resolved at runtime by DeveloperName from `HL_Webhook_Config.Default.Campaign_Event_RecordType_DeveloperName__c` (defaults to `Event`). If the RecordType is not found in the org, RecordTypeId is left unset.
 
+Campaign Member Statuses
+When a Campaign is created or upserted by this route, the code seeds two CampaignMemberStatus records on the Campaign if they aren't already present:
+- `Registered` (HasResponded = false)
+- `Attended` (HasResponded = true)
+
+The auto-created `Sent` and `Responded` statuses are left in place. Seeding is idempotent, so re-firing the webhook will not create duplicates.
+
 The Description field is built by combining ActivityDescription and LinkUrl: if both are present, the description becomes the ActivityDescription text followed by a new line and HL Link: and the URL.
 
 Creating or Updating the Campaign

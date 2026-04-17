@@ -259,10 +259,41 @@ public without sharing class HigherLogicActivityProcessor {
             campaignId = c.Id;
         }
 
+        seedCampaignMemberStatuses(campaignId);
+
         Id accountId = findAccountIdByCommunityId(communityId);
         if (campaignId != null && accountId != null) {
             createEventPartner(campaignId, accountId);
         }
+    }
+
+    @TestVisible
+    private static void seedCampaignMemberStatuses(Id campaignId) {
+        if (campaignId == null) return;
+        Set<String> existingLabels = new Set<String>();
+        for (CampaignMemberStatus cms : [
+            SELECT Label FROM CampaignMemberStatus WHERE CampaignId = :campaignId
+        ]) {
+            existingLabels.add(cms.Label);
+        }
+        List<CampaignMemberStatus> toInsert = new List<CampaignMemberStatus>();
+        if (!existingLabels.contains('Registered')) {
+            toInsert.add(new CampaignMemberStatus(
+                CampaignId = campaignId,
+                Label = 'Registered',
+                SortOrder = 3,
+                HasResponded = false
+            ));
+        }
+        if (!existingLabels.contains('Attended')) {
+            toInsert.add(new CampaignMemberStatus(
+                CampaignId = campaignId,
+                Label = 'Attended',
+                SortOrder = 4,
+                HasResponded = true
+            ));
+        }
+        if (!toInsert.isEmpty()) insert toInsert;
     }
 
     private static void createEventPartner(Id campaignId, Id accountId) {

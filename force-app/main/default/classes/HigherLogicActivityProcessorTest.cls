@@ -420,6 +420,47 @@ private class HigherLogicActivityProcessorTest {
             WHERE Event_Campaign__c = :c.Id]);
     }
 
+    @IsTest static void route4_seedsCampaignMemberStatuses() {
+        HigherLogicConfig.override = buildCfg('s');
+        Test.startTest();
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
+            new Map<String,Object>{ 'EventKey' => 'E-SEED-1', 'Title' => 'Seed Test' }));
+        Test.stopTest();
+        Campaign c = [SELECT Id FROM Campaign WHERE HL_Event_ID__c = 'E-SEED-1'];
+        Map<String, CampaignMemberStatus> byLabel = new Map<String, CampaignMemberStatus>();
+        for (CampaignMemberStatus cms : [
+            SELECT Label, HasResponded FROM CampaignMemberStatus WHERE CampaignId = :c.Id
+        ]) {
+            byLabel.put(cms.Label, cms);
+        }
+        System.assert(byLabel.containsKey('Registered'));
+        System.assert(byLabel.containsKey('Attended'));
+        System.assertEquals(false, byLabel.get('Registered').HasResponded);
+        System.assertEquals(true, byLabel.get('Attended').HasResponded);
+    }
+
+    @IsTest static void route4_seedsCampaignMemberStatusesIdempotent() {
+        HigherLogicConfig.override = buildCfg('s');
+        // First fire creates Campaign and seeds statuses
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
+            new Map<String,Object>{ 'EventKey' => 'E-SEED-2', 'Title' => 'Seed Idempotent' }));
+        Test.startTest();
+        // Second fire should not duplicate statuses
+        System.enqueueJob(new HigherLogicActivityProcessor.Job(
+            HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
+            new Map<String,Object>{ 'EventKey' => 'E-SEED-2', 'Title' => 'Seed Idempotent' }));
+        Test.stopTest();
+        Campaign c = [SELECT Id FROM Campaign WHERE HL_Event_ID__c = 'E-SEED-2'];
+        Integer registered = [SELECT COUNT() FROM CampaignMemberStatus
+            WHERE CampaignId = :c.Id AND Label = 'Registered'];
+        Integer attended = [SELECT COUNT() FROM CampaignMemberStatus
+            WHERE CampaignId = :c.Id AND Label = 'Attended'];
+        System.assertEquals(1, registered);
+        System.assertEquals(1, attended);
+    }
+
     @IsTest static void route4_dedupesExistingPartner() {
         HigherLogicConfig.override = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-600');
