@@ -4,7 +4,7 @@
     <protected>true</protected>
     <values>
         <field>Shared_Secret__c</field>
-        <value xsi:type="xsd:string"></value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Account_RecordType_DeveloperName__c</field>
