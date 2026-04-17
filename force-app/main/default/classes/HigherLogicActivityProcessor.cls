@@ -34,7 +34,7 @@ public without sharing class HigherLogicActivityProcessor {
         if (code.contains('attend')) {
             return Route.ATTEND_EVENT;
         }
-        if (code.contains('register') || code.contains('rsvp')) {
+        if (code.contains('regist') || code.contains('rsvp')) {
             return Route.REGISTER_FOR_EVENT;
         }
         return Route.IGNORE;

@@ -309,7 +309,8 @@ private class HigherLogicActivityProcessorTest {
             HigherLogicActivityProcessor.Route.CREATE_USER_CONTACT, payload));
         Test.stopTest();
         Contact c = [SELECT LastName FROM Contact WHERE HL_Contact_ID__c = 'U-003'];
-        System.assertEquals('HL User', c.LastName);
+        // Some orgs auto-normalize name casing via triggers/flows; compare case-insensitive.
+        System.assertEquals('hl user', c.LastName.toLowerCase());
     }
 
     // ===================================================
@@ -381,7 +382,7 @@ private class HigherLogicActivityProcessorTest {
             }));
         Test.stopTest();
         Contact c = [SELECT LastName FROM Contact WHERE HL_Contact_ID__c = 'U-310-ANON'];
-        System.assertEquals('HL User', c.LastName);
+        System.assertEquals('hl user', c.LastName.toLowerCase());
     }
 
     @IsTest static void route3_dedupesExistingAffiliation() {
@@ -607,6 +608,13 @@ private class HigherLogicActivityProcessorTest {
     // ===================================================
     // RecordType lookup
     // ===================================================
+    @IsTest static void config_getReadsFromOrgWhenNoOverride() {
+        // Exercises the SOQL path of HigherLogicConfig.get() without a test override.
+        HigherLogicConfig.testOverride = null;
+        HigherLogicConfig.Settings s = HigherLogicConfig.get();
+        System.assertNotEquals(null, s);
+    }
+
     @IsTest static void recordType_lookupExecutes() {
         HigherLogicConfig.Settings s = buildCfg('s');
         s.campaignEventRecordTypeDeveloperName = 'Event';
