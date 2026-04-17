@@ -1,4 +1,5 @@
 public without sharing class HigherLogicActivityProcessor {
+
     public enum Route {
         CREATE_COMMUNITY_ACCOUNT,
         CREATE_USER_CONTACT,
@@ -6,24 +7,28 @@ public without sharing class HigherLogicActivityProcessor {
         CREATE_EVENT_CAMPAIGN,
         IGNORE
     }
+
     public static Route decideRoute(String activityCode, String objectType) {
         String code = (activityCode == null) ? '' : activityCode.toLowerCase();
         String obj  = (objectType == null) ? '' : objectType.toLowerCase();
-        System.debug(LoggingLevel.INFO, '[HL] decideRoute inputs. activityCode=' + activityCode + ' objectType=' + objectType);
+
         if (code == 'communitycreate' || (code.contains('create') && obj == 'community')) {
             return Route.CREATE_COMMUNITY_ACCOUNT;
         }
         if (code == 'contactcreate' || (code.contains('create') && obj == 'contact')) {
             return Route.CREATE_USER_CONTACT;
         }
-        if (code == 'communitymemberjoin' || code == 'communityjoin' || (code.contains('join') && obj == 'communitymember')) {
+        if (code == 'communitymemberjoin' || code == 'communityjoin'
+            || (code.contains('join') && obj == 'communitymember')) {
             return Route.JOIN_COMMUNITY_LINK_CONTACT;
         }
-        if (code == 'eventcreate' || (code.contains('create') && (obj == 'calendarevent' || obj == 'event'))) {
+        if (code == 'eventcreate'
+            || (code.contains('create') && (obj == 'calendarevent' || obj == 'event'))) {
             return Route.CREATE_EVENT_CAMPAIGN;
         }
         return Route.IGNORE;
     }
+
     public class Job implements Queueable {
         private Route route;
         private Map<String, Object> payload;
@@ -34,16 +39,14 @@ public without sharing class HigherLogicActivityProcessor {
         public void execute(QueueableContext qc) {
             System.debug(LoggingLevel.INFO, '[HL] Job start. route=' + String.valueOf(route));
             try {
-                if (route == HigherLogicActivityProcessor.Route.CREATE_COMMUNITY_ACCOUNT) {
+                if (route == Route.CREATE_COMMUNITY_ACCOUNT) {
                     createOrUpsertAccountForCommunity(payload);
-                } else if (route == HigherLogicActivityProcessor.Route.CREATE_USER_CONTACT) {
+                } else if (route == Route.CREATE_USER_CONTACT) {
                     createOrUpsertContactForUser(payload);
-                } else if (route == HigherLogicActivityProcessor.Route.JOIN_COMMUNITY_LINK_CONTACT) {
+                } else if (route == Route.JOIN_COMMUNITY_LINK_CONTACT) {
                     linkContactToCommunityAccount(payload);
-                } else if (route == HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN) {
+                } else if (route == Route.CREATE_EVENT_CAMPAIGN) {
                     createOrUpsertCampaignForEvent(payload);
-                } else {
-                    System.debug(LoggingLevel.INFO, '[HL] Job ignored (route=IGNORE).');
                 }
             } catch (Exception e) {
                 System.debug(LoggingLevel.ERROR,
@@ -53,9 +56,9 @@ public without sharing class HigherLogicActivityProcessor {
                 );
                 throw e;
             }
-            System.debug(LoggingLevel.INFO, '[HL] Job done. route=' + String.valueOf(route));
         }
     }
+
     // ------------------------------------------------
     // 1) COMMUNITY CREATE -> ACCOUNT
     // ------------------------------------------------
@@ -66,36 +69,32 @@ public without sharing class HigherLogicActivityProcessor {
         String communityName = pick(payload, new List<String>{
             'CommunityName','CommunityTitle','Community','Name','Title'
         });
-        System.debug(LoggingLevel.INFO,
-            '[HL] createOrUpsertAccountForCommunity. communityId=' + communityId +
-            ' communityName=' + communityName
-        );
+
         if (String.isBlank(communityName)) communityName = 'Higher Logic Community';
+
         Account a = new Account();
         a.Name = communityName;
-        // Keep if required in your org
-        a.RecordTypeId = '012VA000002tlOXYAY';
+
+        Id rtId = getAccountRecordTypeId();
+        if (rtId != null) a.RecordTypeId = rtId;
+
         if (!String.isBlank(communityId) && hasAccountField('HL_Community_ID__c')) {
             a.put('HL_Community_ID__c', communityId);
-            System.debug(LoggingLevel.INFO, '[HL] Upserting Account by HL_Community_ID__c=' + communityId);
             upsert a HL_Community_ID__c;
         } else {
-            System.debug(LoggingLevel.WARN, '[HL] Inserting Account (no HL_Community_ID__c found/available)');
             insert a;
         }
         System.debug(LoggingLevel.INFO, '[HL] Account done. accountId=' + a.Id);
     }
+
     // ------------------------------------------------
     // 2) CONTACT CREATE -> CONTACT
-    // Match on npe01__HomeEmail__c
-    // Store email in both HomeEmail + Email
+    // Match priority: HL_Contact_ID__c > npe01__HomeEmail__c > Email
     // ------------------------------------------------
     private static Id createOrUpsertContactForUser(Map<String, Object> payload) {
-        String hlUserId    = asString(payload.get('ContributorKey'));
-        String hlMemberKey = asString(payload.get('ContributorMemberKey'));
-        if (String.isBlank(hlUserId)) {
-            hlUserId = pick(payload, new List<String>{ 'ContactKey', 'AgentContactKey', 'ContributorKey', 'Key' });
-        }
+        String externalId = pick(payload, new List<String>{
+            'ContributorKey', 'ContributorMemberKey', 'ContactKey', 'AgentContactKey', 'Key'
+        });
         String email = pick(payload, new List<String>{
             'pb_emailaddress','Email','email','EmailAddress'
         });
@@ -105,45 +104,18 @@ public without sharing class HigherLogicActivityProcessor {
         String lastName  = pick(payload, new List<String>{
             'pb_lastname','LastName','lastName','ContributorLastName'
         });
-        String phone = pick(payload, new List<String>{
-            'pb_phone1','Phone','phone'
-        });
-        String street  = pick(payload, new List<String>{ 'pb_address1', 'Address1', 'Street', 'MailingStreet' });
-        String city    = pick(payload, new List<String>{ 'pb_city', 'City', 'MailingCity' });
-        String state   = pick(payload, new List<String>{ 'pb_state', 'State', 'StateProvince', 'MailingState' });
-        String postal  = pick(payload, new List<String>{ 'pb_postalcode', 'PostalCode', 'Zip', 'MailingPostalCode' });
-        String country = pick(payload, new List<String>{ 'pb_country', 'Country', 'MailingCountry' });
-        String externalId = !String.isBlank(hlUserId) ? hlUserId : hlMemberKey;
-        System.debug(LoggingLevel.INFO,
-            '[HL] createOrUpsertContactForUser. externalId=' + externalId +
-            ' email=' + email +
-            ' firstName=' + firstName +
-            ' lastName=' + lastName
-        );
+        String phone = pick(payload, new List<String>{ 'pb_phone1','Phone','phone' });
+        String street  = pick(payload, new List<String>{ 'pb_address1','Address1','Street','MailingStreet' });
+        String city    = pick(payload, new List<String>{ 'pb_city','City','MailingCity' });
+        String state   = pick(payload, new List<String>{ 'pb_state','State','StateProvince','MailingState' });
+        String postal  = pick(payload, new List<String>{ 'pb_postalcode','PostalCode','Zip','MailingPostalCode' });
+        String country = pick(payload, new List<String>{ 'pb_country','Country','MailingCountry' });
+
         if (String.isBlank(lastName)) lastName = 'HL User';
-        Contact existing = null;
-        // PRIMARY MATCH = Personal Email
-        if (!String.isBlank(email) && hasContactField('npe01__HomeEmail__c')) {
-            List<Contact> hits = [
-                SELECT Id, Email, FirstName, LastName, npe01__HomeEmail__c
-                FROM Contact
-                WHERE npe01__HomeEmail__c = :email
-                LIMIT 1
-            ];
-            if (!hits.isEmpty()) existing = hits[0];
-        }
-        // fallback only if home email field not available
-        if (existing == null && !String.isBlank(email) && !hasContactField('npe01__HomeEmail__c')) {
-            List<Contact> hits = [
-                SELECT Id, Email, FirstName, LastName
-                FROM Contact
-                WHERE Email = :email
-                LIMIT 1
-            ];
-            if (!hits.isEmpty()) existing = hits[0];
-        }
+
+        Contact existing = findContactForUser(externalId, email);
+
         if (existing != null) {
-            System.debug(LoggingLevel.INFO, '[HL] Found existing Contact. id=' + existing.Id);
             Contact upd = new Contact(Id = existing.Id);
             if (!String.isBlank(firstName)) upd.FirstName = firstName;
             if (!String.isBlank(lastName))  upd.LastName  = lastName;
@@ -165,6 +137,7 @@ public without sharing class HigherLogicActivityProcessor {
             update upd;
             return existing.Id;
         }
+
         Contact c = new Contact();
         c.FirstName = firstName;
         c.LastName  = lastName;
@@ -184,45 +157,38 @@ public without sharing class HigherLogicActivityProcessor {
         if (!String.isBlank(postal))  c.MailingPostalCode = postal;
         if (!String.isBlank(country)) c.MailingCountry    = country;
         insert c;
-        System.debug(LoggingLevel.INFO, '[HL] Inserted Contact. id=' + c.Id);
         return c.Id;
     }
+
     // ------------------------------------------------
-    // 3) COMMUNITY MEMBER JOIN -> CREATE AFFILIATION
-    // Uses npe5__Affiliation__c instead of Contact.AccountId
+    // 3) COMMUNITY MEMBER JOIN -> AFFILIATION
     // ------------------------------------------------
     private static void linkContactToCommunityAccount(Map<String, Object> payload) {
         String communityId = pick(payload, new List<String>{
             'CommunityKey','CommunityId','CommunityID','CommunityGuid','CommunityGUID','Key'
         });
-        String hlUserId    = asString(payload.get('ContributorKey'));
-        String hlMemberKey = asString(payload.get('ContributorMemberKey'));
-        String externalId  = !String.isBlank(hlUserId) ? hlUserId : hlMemberKey;
+        String externalId = pick(payload, new List<String>{
+            'ContributorKey', 'ContributorMemberKey'
+        });
         String email = pick(payload, new List<String>{
             'pb_emailaddress','Email','email','EmailAddress'
         });
-        System.debug(LoggingLevel.INFO,
-            '[HL] linkContactToCommunityAccount. communityId=' + communityId +
-            ' externalId=' + externalId +
-            ' email=' + email
-        );
+
         Id accountId = findAccountIdByCommunityId(communityId);
         if (accountId == null) {
-            System.debug(LoggingLevel.WARN, '[HL] No Account found for communityId=' + communityId + '. Cannot create affiliation.');
+            System.debug(LoggingLevel.WARN, '[HL] No Account found for communityId=' + communityId);
             return;
         }
-        Id contactId = findContactId(externalId, email);
-        if (contactId == null) {
-            System.debug(LoggingLevel.WARN, '[HL] No Contact found for externalId/email. Join payload will not create contact because it lacks reliable email.');
+        Contact match = findContactForUser(externalId, email);
+        if (match == null) {
+            System.debug(LoggingLevel.WARN, '[HL] No Contact found for externalId/email');
             return;
         }
-        createAffiliation(contactId, accountId);
+        createAffiliation(match.Id, accountId);
     }
+
     private static void createAffiliation(Id contactId, Id accountId) {
-        if (contactId == null || accountId == null) {
-            System.debug(LoggingLevel.WARN, '[HL] createAffiliation skipped. contactId or accountId is null');
-            return;
-        }
+        if (contactId == null || accountId == null) return;
         List<npe5__Affiliation__c> existing = [
             SELECT Id
             FROM npe5__Affiliation__c
@@ -230,16 +196,13 @@ public without sharing class HigherLogicActivityProcessor {
               AND npe5__Organization__c = :accountId
             LIMIT 1
         ];
-        if (!existing.isEmpty()) {
-            System.debug(LoggingLevel.INFO, '[HL] Affiliation already exists. id=' + existing[0].Id);
-            return;
-        }
+        if (!existing.isEmpty()) return;
         npe5__Affiliation__c aff = new npe5__Affiliation__c();
         aff.npe5__Contact__c = contactId;
         aff.npe5__Organization__c = accountId;
         insert aff;
-        System.debug(LoggingLevel.INFO, '[HL] Affiliation created. id=' + aff.Id);
     }
+
     // ------------------------------------------------
     // 4) EVENT CREATE -> CAMPAIGN + EVENT PARTNER
     // ------------------------------------------------
@@ -253,15 +216,10 @@ public without sharing class HigherLogicActivityProcessor {
         Date startDate = parseIsoToDate(startIso);
         Date endDate   = parseIsoToDate(endIso);
         String communityId = pick(payload, new List<String>{ 'CommunityKey', 'ParentKey' });
-        System.debug(LoggingLevel.INFO,
-            '[HL] createOrUpsertCampaignForEvent. eventKey=' + eventKey +
-            ' title=' + title +
-            ' startDate=' + String.valueOf(startDate) +
-            ' endDate=' + String.valueOf(endDate) +
-            ' communityId=' + communityId
-        );
+
         if (String.isBlank(title)) title = 'Higher Logic Event';
         if (startDate == null) startDate = Date.today();
+
         Campaign c = new Campaign();
         c.Name = title;
         c.OKR_Type__c = 'fundraise';
@@ -271,6 +229,7 @@ public without sharing class HigherLogicActivityProcessor {
         if (hasCampaignField('Status')) c.Status = 'Planned';
         c.StartDate = startDate;
         if (endDate != null) c.EndDate = endDate;
+
         if (!String.isBlank(linkUrl) || !String.isBlank(description)) {
             String finalDesc = '';
             if (!String.isBlank(description)) finalDesc += description;
@@ -280,96 +239,102 @@ public without sharing class HigherLogicActivityProcessor {
             }
             c.Description = finalDesc;
         }
+
         Id campaignId;
         if (!String.isBlank(eventKey) && hasCampaignField('HL_Event_ID__c')) {
             c.put('HL_Event_ID__c', eventKey);
-            System.debug(LoggingLevel.INFO, '[HL] Upserting Campaign by HL_Event_ID__c=' + eventKey);
             upsert c HL_Event_ID__c;
             campaignId = c.Id;
         } else {
-            System.debug(LoggingLevel.WARN, '[HL] Inserting Campaign (no HL_Event_ID__c found/available). eventKey=' + eventKey);
             insert c;
             campaignId = c.Id;
         }
-        System.debug(LoggingLevel.INFO, '[HL] Campaign done. campaignId=' + campaignId);
+
         Id accountId = findAccountIdByCommunityId(communityId);
         if (campaignId != null && accountId != null) {
             createEventPartner(campaignId, accountId);
-        } else {
-            System.debug(LoggingLevel.WARN, '[HL] Skipping Event Partner. campaignId=' + campaignId + ' accountId=' + accountId);
         }
     }
+
     private static void createEventPartner(Id campaignId, Id accountId) {
-        System.debug(LoggingLevel.INFO, '[HL] createEventPartner. campaignId=' + campaignId + ' accountId=' + accountId);
         List<conference360__Sponsor__c> existing = [
             SELECT Id
             FROM conference360__Sponsor__c
             WHERE conference360__Account__c = :accountId
-              AND conference360__Event__c = :campaignId
+              AND Event_Campaign__c = :campaignId
             LIMIT 1
         ];
-        if (!existing.isEmpty()) {
-            System.debug(LoggingLevel.INFO, '[HL] Event Partner already exists. id=' + existing[0].Id);
-            return;
-        }
+        if (!existing.isEmpty()) return;
         conference360__Sponsor__c partner = new conference360__Sponsor__c();
         partner.conference360__Account__c = accountId;
-        partner.Event_Campaign__c  = campaignId;
+        partner.Event_Campaign__c = campaignId;
         insert partner;
-        System.debug(LoggingLevel.INFO, '[HL] Event Partner created. id=' + partner.Id);
     }
-    private static Date parseIsoToDate(String iso) {
-        if (String.isBlank(iso)) return null;
-        try {
-            String s = iso.replace('T', ' ');
-            s = s.endsWith('Z') ? s.substring(0, s.length() - 1) : s;
-            DateTime dt = DateTime.valueOfGmt(s);
-            return dt.date();
-        } catch (Exception e1) {
-            System.debug(LoggingLevel.WARN, '[HL] parseIsoToDate failed. iso=' + iso + ' err=' + e1.getMessage());
-            return null;
-        }
-    }
-    private static Id findAccountIdByCommunityId(String communityId) {
-        if (String.isBlank(communityId) || !hasAccountField('HL_Community_ID__c')) return null;
-        List<Account> hits = [
-            SELECT Id
-            FROM Account
-            WHERE HL_Community_ID__c = :communityId
-            LIMIT 1
-        ];
-        return hits.isEmpty() ? null : hits[0].Id;
-    }
-    private static Id findContactId(String externalId, String email) {
+
+    // ------------------------------------------------
+    // Contact lookup shared by Routes 2 and 3
+    // Priority: HL_Contact_ID__c > npe01__HomeEmail__c > Email
+    // ------------------------------------------------
+    @TestVisible
+    private static Contact findContactForUser(String externalId, String email) {
         if (!String.isBlank(externalId) && hasContactField('HL_Contact_ID__c')) {
-            List<Contact> hits = [
-                SELECT Id
-                FROM Contact
-                WHERE HL_Contact_ID__c = :externalId
-                LIMIT 1
-            ];
-            if (!hits.isEmpty()) return hits[0].Id;
+            List<Contact> hits = Database.query(
+                'SELECT Id FROM Contact WHERE HL_Contact_ID__c = :externalId LIMIT 1'
+            );
+            if (!hits.isEmpty()) return hits[0];
         }
         if (!String.isBlank(email) && hasContactField('npe01__HomeEmail__c')) {
-            List<Contact> hits = [
-                SELECT Id
-                FROM Contact
-                WHERE npe01__HomeEmail__c = :email
-                LIMIT 1
-            ];
-            if (!hits.isEmpty()) return hits[0].Id;
+            List<Contact> hits = Database.query(
+                'SELECT Id FROM Contact WHERE npe01__HomeEmail__c = :email LIMIT 1'
+            );
+            if (!hits.isEmpty()) return hits[0];
         }
-        if (!String.isBlank(email) && !hasContactField('npe01__HomeEmail__c')) {
+        if (!String.isBlank(email)) {
             List<Contact> hits = [
-                SELECT Id
-                FROM Contact
-                WHERE Email = :email
-                LIMIT 1
+                SELECT Id FROM Contact WHERE Email = :email LIMIT 1
             ];
-            if (!hits.isEmpty()) return hits[0].Id;
+            if (!hits.isEmpty()) return hits[0];
         }
         return null;
     }
+
+    private static Id findAccountIdByCommunityId(String communityId) {
+        if (String.isBlank(communityId) || !hasAccountField('HL_Community_ID__c')) return null;
+        List<Account> hits = Database.query(
+            'SELECT Id FROM Account WHERE HL_Community_ID__c = :communityId LIMIT 1'
+        );
+        return hits.isEmpty() ? null : hits[0].Id;
+    }
+
+    // ------------------------------------------------
+    // RecordType lookup cache
+    // ------------------------------------------------
+    private static Id cachedAccountRecordTypeId;
+    private static Boolean accountRecordTypeChecked = false;
+
+    @TestVisible
+    private static Id getAccountRecordTypeId() {
+        if (accountRecordTypeChecked) return cachedAccountRecordTypeId;
+        accountRecordTypeChecked = true;
+        String devName = HigherLogicConfig.get().accountRecordTypeDeveloperName;
+        if (String.isBlank(devName)) return null;
+        Schema.DescribeSObjectResult d = Account.SObjectType.getDescribe();
+        Schema.RecordTypeInfo rt = d.getRecordTypeInfosByDeveloperName().get(devName);
+        if (rt == null) {
+            System.debug(LoggingLevel.WARN,
+                '[HL] Account RecordType not found for DeveloperName=' + devName);
+            return null;
+        }
+        cachedAccountRecordTypeId = rt.getRecordTypeId();
+        return cachedAccountRecordTypeId;
+    }
+
+    @TestVisible
+    private static void resetRecordTypeCache() {
+        cachedAccountRecordTypeId = null;
+        accountRecordTypeChecked = false;
+    }
+
     // ----------------------------
     // Helpers
     // ----------------------------
@@ -382,11 +347,32 @@ public without sharing class HigherLogicActivityProcessor {
         }
         return null;
     }
+
     public static String asString(Object v) {
         if (v == null) return null;
         if (v instanceof String) return (String) v;
         return String.valueOf(v);
     }
+
+    @TestVisible
+    private static Date parseIsoToDate(String iso) {
+        if (String.isBlank(iso)) return null;
+        try {
+            String s = iso;
+            Integer dotIdx = s.indexOf('.');
+            if (dotIdx > 0) s = s.substring(0, dotIdx);
+            Integer plusIdx = s.lastIndexOf('+');
+            if (plusIdx > 10) s = s.substring(0, plusIdx);
+            s = s.replace('T', ' ');
+            if (s.endsWith('Z')) s = s.substring(0, s.length() - 1);
+            DateTime dt = DateTime.valueOfGmt(s);
+            return dt.date();
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, '[HL] parseIsoToDate failed. iso=' + iso + ' err=' + e.getMessage());
+            return null;
+        }
+    }
+
     private static Boolean hasContactField(String apiName) {
         return Schema.SObjectType.Contact.fields.getMap().containsKey(apiName);
     }

@@ -1,0 +1,5 @@
+**/*.DS_Store
+**/jsconfig.json
+**/.eslintrc.json
+
+package.xml
