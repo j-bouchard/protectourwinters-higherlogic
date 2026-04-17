@@ -123,7 +123,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_noSecret_returns503() {
-        HigherLogicConfig.override = buildCfg(null);
+        HigherLogicConfig.testOverride = buildCfg(null);
         RestContext.request = buildReq('{}', 'x');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
@@ -131,7 +131,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_missingToken_returns401() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         RestContext.request = buildReq('{}', null);
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
@@ -139,7 +139,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_wrongToken_returns401() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         RestContext.request = buildReq('{}', 'wrong');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
@@ -147,7 +147,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_blankBody_returns400() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         RestContext.request = buildReq('', 's3cret');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
@@ -155,7 +155,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_badJson_returns400() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         RestContext.request = buildReq('not valid json', 's3cret');
         RestContext.response = new RestResponse();
         HigherLogicActivityWebhook.handlePost();
@@ -163,7 +163,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_ignoreRoute_returns200() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         String body = JSON.serialize(new Map<String,Object>{ 'ActivityCode' => 'UnknownThing' });
         RestContext.request = buildReq(body, 's3cret');
         RestContext.response = new RestResponse();
@@ -173,7 +173,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void webhook_enqueuesJob() {
-        HigherLogicConfig.override = buildCfg('s3cret');
+        HigherLogicConfig.testOverride = buildCfg('s3cret');
         String body = JSON.serialize(new Map<String,Object>{
             'ActivityCode' => 'CommunityCreate',
             'CommunityKey' => 'C-WEBHOOK-001',
@@ -194,7 +194,7 @@ private class HigherLogicActivityProcessorTest {
     // Route 1 — Community -> Account
     // ===================================================
     @IsTest static void route1_insertsNewAccount() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Map<String,Object> payload = new Map<String,Object>{
             'CommunityKey' => 'C-001',
             'CommunityName' => 'Test Community'
@@ -209,7 +209,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route1_upsertsExistingAccount() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account pre = new Account(Name = 'Old', HL_Community_ID__c = 'C-002');
         insert pre;
         Map<String,Object> payload = new Map<String,Object>{
@@ -226,7 +226,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route1_noCommunityId_plainInsert() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Test.startTest();
         System.enqueueJob(new HigherLogicActivityProcessor.Job(
             HigherLogicActivityProcessor.Route.CREATE_COMMUNITY_ACCOUNT,
@@ -239,7 +239,7 @@ private class HigherLogicActivityProcessorTest {
     // Route 2 — Contact
     // ===================================================
     @IsTest static void route2_createsNewContact() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Map<String,Object> payload = new Map<String,Object>{
             'ContributorKey' => 'U-001',
             'pb_emailaddress' => 'new@example.com',
@@ -261,7 +261,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route2_matchesByHLContactId_evenOnEmailChange() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Contact pre = new Contact(FirstName = 'Old', LastName = 'User',
             Email = 'old@example.com', HL_Contact_ID__c = 'U-002');
         insert pre;
@@ -281,7 +281,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route2_fallsBackToStandardEmail() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         // Contact has only standard Email; no HL_Contact_ID, no HomeEmail
         Contact pre = new Contact(FirstName = 'Standard', LastName = 'Only',
             Email = 'standard@example.com');
@@ -299,7 +299,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route2_defaultsLastName() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Map<String,Object> payload = new Map<String,Object>{
             'ContributorKey' => 'U-003',
             'pb_emailaddress' => 'anon@example.com'
@@ -316,7 +316,7 @@ private class HigherLogicActivityProcessorTest {
     // Route 3 — Affiliation
     // ===================================================
     @IsTest static void route3_createsAffiliation() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-100');
         insert a;
         Contact c = new Contact(FirstName = 'J', LastName = 'One',
@@ -332,7 +332,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route3_noAccount_noOp() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Contact c = new Contact(FirstName = 'X', LastName = 'Y',
             Email = 'x@example.com', HL_Contact_ID__c = 'U-200');
         insert c;
@@ -345,7 +345,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route3_createsContactWhenNoMatch_thenAffiliates() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-300');
         insert a;
         Test.startTest();
@@ -369,7 +369,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route3_createsContactWithDefaultLastName() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-310');
         insert a;
         Test.startTest();
@@ -385,7 +385,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route3_dedupesExistingAffiliation() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-400');
         insert a;
         Contact c = new Contact(FirstName = 'A', LastName = 'B',
@@ -405,7 +405,7 @@ private class HigherLogicActivityProcessorTest {
     // Route 4 — Campaign + Event Partner
     // ===================================================
     @IsTest static void route4_createsCampaignAndPartner() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-500');
         insert a;
         Map<String,Object> payload = new Map<String,Object>{
@@ -429,7 +429,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route4_noCommunity_skipsPartner() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Test.startTest();
         System.enqueueJob(new HigherLogicActivityProcessor.Job(
             HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
@@ -441,7 +441,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route4_seedsCampaignMemberStatuses() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Test.startTest();
         System.enqueueJob(new HigherLogicActivityProcessor.Job(
             HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
@@ -461,7 +461,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route4_seedsCampaignMemberStatusesIdempotent() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         // First fire creates Campaign and seeds statuses
         System.enqueueJob(new HigherLogicActivityProcessor.Job(
             HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN,
@@ -482,7 +482,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route4_dedupesExistingPartner() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Account a = new Account(Name = 'Community', HL_Community_ID__c = 'C-600');
         insert a;
         Campaign pre = new Campaign(Name = 'Pre',
@@ -522,7 +522,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route5_registerInsertsNewCampaignMember() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Campaign camp = makeEventCampaign('E-R5-1');
         Contact c = new Contact(FirstName = 'R', LastName = 'One',
             Email = 'r1@example.com', HL_Contact_ID__c = 'U-R5-1');
@@ -539,7 +539,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route5_attendUpgradesExistingRegistered() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Campaign camp = makeEventCampaign('E-R5-2');
         Contact c = new Contact(FirstName = 'R', LastName = 'Two',
             Email = 'r2@example.com', HL_Contact_ID__c = 'U-R5-2');
@@ -556,7 +556,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route5_registerDoesNotDowngradeAttended() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Campaign camp = makeEventCampaign('E-R5-3');
         Contact c = new Contact(FirstName = 'R', LastName = 'Three',
             Email = 'r3@example.com', HL_Contact_ID__c = 'U-R5-3');
@@ -573,7 +573,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route5_createsContactIfMissing() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Campaign camp = makeEventCampaign('E-R5-4');
         Test.startTest();
         System.enqueueJob(new HigherLogicActivityProcessor.Job(
@@ -592,7 +592,7 @@ private class HigherLogicActivityProcessorTest {
     }
 
     @IsTest static void route5_noCampaignIsNoOp() {
-        HigherLogicConfig.override = buildCfg('s');
+        HigherLogicConfig.testOverride = buildCfg('s');
         Contact c = new Contact(FirstName = 'X', LastName = 'Y',
             Email = 'xy@example.com', HL_Contact_ID__c = 'U-R5-5');
         insert c;
@@ -610,7 +610,7 @@ private class HigherLogicActivityProcessorTest {
     @IsTest static void recordType_lookupExecutes() {
         HigherLogicConfig.Settings s = buildCfg('s');
         s.campaignEventRecordTypeDeveloperName = 'Event';
-        HigherLogicConfig.override = s;
+        HigherLogicConfig.testOverride = s;
         HigherLogicActivityProcessor.resetRecordTypeCache();
         HigherLogicActivityProcessor.getAccountRecordTypeId();
         HigherLogicActivityProcessor.getCampaignEventRecordTypeId();

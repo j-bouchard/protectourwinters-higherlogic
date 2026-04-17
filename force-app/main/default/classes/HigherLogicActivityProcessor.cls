@@ -50,17 +50,17 @@ public without sharing class HigherLogicActivityProcessor {
         public void execute(QueueableContext qc) {
             System.debug(LoggingLevel.INFO, '[HL] Job start. route=' + String.valueOf(route));
             try {
-                if (route == Route.CREATE_COMMUNITY_ACCOUNT) {
+                if (route == HigherLogicActivityProcessor.Route.CREATE_COMMUNITY_ACCOUNT) {
                     createOrUpsertAccountForCommunity(payload);
-                } else if (route == Route.CREATE_USER_CONTACT) {
+                } else if (route == HigherLogicActivityProcessor.Route.CREATE_USER_CONTACT) {
                     createOrUpsertContactForUser(payload);
-                } else if (route == Route.JOIN_COMMUNITY_LINK_CONTACT) {
+                } else if (route == HigherLogicActivityProcessor.Route.JOIN_COMMUNITY_LINK_CONTACT) {
                     linkContactToCommunityAccount(payload);
-                } else if (route == Route.CREATE_EVENT_CAMPAIGN) {
+                } else if (route == HigherLogicActivityProcessor.Route.CREATE_EVENT_CAMPAIGN) {
                     createOrUpsertCampaignForEvent(payload);
-                } else if (route == Route.REGISTER_FOR_EVENT) {
+                } else if (route == HigherLogicActivityProcessor.Route.REGISTER_FOR_EVENT) {
                     setCampaignMemberStatus(payload, STATUS_REGISTERED);
-                } else if (route == Route.ATTEND_EVENT) {
+                } else if (route == HigherLogicActivityProcessor.Route.ATTEND_EVENT) {
                     setCampaignMemberStatus(payload, STATUS_ATTENDED);
                 }
             } catch (Exception e) {

@@ -6,10 +6,10 @@ public without sharing class HigherLogicConfig {
         public String campaignEventRecordTypeDeveloperName;
     }
 
-    @TestVisible private static Settings override;
+    @TestVisible private static Settings testOverride;
 
     public static Settings get() {
-        if (override != null) return override;
+        if (testOverride != null) return testOverride;
 
         Settings s = new Settings();
         List<HL_Webhook_Config__mdt> rows = [
