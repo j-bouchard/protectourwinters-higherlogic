@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordType xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Higher_Logic_Community</fullName>
+    <active>true</active>
+    <description>Accounts representing Higher Logic communities synced via the activity webhook.</description>
+    <label>Higher Logic Community</label>
+</RecordType>
