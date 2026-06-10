@@ -488,10 +488,9 @@ private class HigherLogicActivityProcessorTest {
             HL_Event_ID__c = eventKey
         );
         insert c;
-        insert new CampaignMemberStatus(CampaignId = c.Id, Label = 'Registered',
-            SortOrder = 3, HasResponded = false);
-        insert new CampaignMemberStatus(CampaignId = c.Id, Label = 'Attended',
-            SortOrder = 4, HasResponded = true);
+        // Reuse the production seeding helper; it computes a safe SortOrder
+        // regardless of which statuses this org auto-creates on new Campaigns.
+        HigherLogicActivityProcessor.seedCampaignMemberStatuses(c.Id);
         return c;
     }
 

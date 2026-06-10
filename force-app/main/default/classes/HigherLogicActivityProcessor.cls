@@ -353,25 +353,32 @@ public without sharing class HigherLogicActivityProcessor {
     private static void seedCampaignMemberStatuses(Id campaignId) {
         if (campaignId == null) return;
         Set<String> existingLabels = new Set<String>();
+        // SortOrder is unique per Campaign, and orgs differ in which slots
+        // the auto-created statuses occupy, so take max + 1 instead of
+        // assuming fixed positions.
+        Integer maxSort = 0;
         for (CampaignMemberStatus cms : [
-            SELECT Label FROM CampaignMemberStatus WHERE CampaignId = :campaignId
+            SELECT Label, SortOrder FROM CampaignMemberStatus WHERE CampaignId = :campaignId
         ]) {
             existingLabels.add(cms.Label);
+            if (cms.SortOrder != null && cms.SortOrder > maxSort) maxSort = cms.SortOrder;
         }
+        Integer nextSort = maxSort + 1;
         List<CampaignMemberStatus> toInsert = new List<CampaignMemberStatus>();
         if (!existingLabels.contains('Registered')) {
             toInsert.add(new CampaignMemberStatus(
                 CampaignId = campaignId,
                 Label = 'Registered',
-                SortOrder = 3,
+                SortOrder = nextSort,
                 HasResponded = false
             ));
+            nextSort++;
         }
         if (!existingLabels.contains('Attended')) {
             toInsert.add(new CampaignMemberStatus(
                 CampaignId = campaignId,
                 Label = 'Attended',
-                SortOrder = 4,
+                SortOrder = nextSort,
                 HasResponded = true
             ));
         }
