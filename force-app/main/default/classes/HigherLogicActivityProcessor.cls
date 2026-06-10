@@ -352,20 +352,22 @@ public without sharing class HigherLogicActivityProcessor {
     @TestVisible
     private static void seedCampaignMemberStatuses(Id campaignId) {
         if (campaignId == null) return;
+        // Orgs differ here: some auto-create their own status sets on new
+        // Campaigns (flows/NPSP automation), with varying labels, casing,
+        // SortOrder slots, and timing. Dedupe case-insensitively, take the
+        // next free SortOrder, and treat residual collisions as success --
+        // a collision means the status already exists, which is the goal.
         Set<String> existingLabels = new Set<String>();
-        // SortOrder is unique per Campaign, and orgs differ in which slots
-        // the auto-created statuses occupy, so take max + 1 instead of
-        // assuming fixed positions.
         Integer maxSort = 0;
         for (CampaignMemberStatus cms : [
             SELECT Label, SortOrder FROM CampaignMemberStatus WHERE CampaignId = :campaignId
         ]) {
-            existingLabels.add(cms.Label);
+            if (cms.Label != null) existingLabels.add(cms.Label.toLowerCase());
             if (cms.SortOrder != null && cms.SortOrder > maxSort) maxSort = cms.SortOrder;
         }
         Integer nextSort = maxSort + 1;
         List<CampaignMemberStatus> toInsert = new List<CampaignMemberStatus>();
-        if (!existingLabels.contains('Registered')) {
+        if (!existingLabels.contains('registered')) {
             toInsert.add(new CampaignMemberStatus(
                 CampaignId = campaignId,
                 Label = 'Registered',
@@ -374,7 +376,7 @@ public without sharing class HigherLogicActivityProcessor {
             ));
             nextSort++;
         }
-        if (!existingLabels.contains('Attended')) {
+        if (!existingLabels.contains('attended')) {
             toInsert.add(new CampaignMemberStatus(
                 CampaignId = campaignId,
                 Label = 'Attended',
@@ -382,7 +384,15 @@ public without sharing class HigherLogicActivityProcessor {
                 HasResponded = true
             ));
         }
-        if (!toInsert.isEmpty()) insert toInsert;
+        if (toInsert.isEmpty()) return;
+        List<Database.SaveResult> results = Database.insert(toInsert, false);
+        for (Integer i = 0; i < results.size(); i++) {
+            if (!results[i].isSuccess()) {
+                System.debug(LoggingLevel.INFO,
+                    '[HL] Skipped seeding CampaignMemberStatus ' + toInsert[i].Label +
+                    ' (likely created by org automation): ' + results[i].getErrors());
+            }
+        }
     }
 
     private static void createEventPartner(Id campaignId, Id accountId) {
