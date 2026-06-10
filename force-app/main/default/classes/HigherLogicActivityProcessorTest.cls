@@ -581,9 +581,30 @@ private class HigherLogicActivityProcessorTest {
     // ===================================================
     // RecordType lookup
     // ===================================================
-    @IsTest static void config_getReadsFromOrgWhenNoOverride() {
-        // Exercises the SOQL path of HigherLogicConfig.get() without a test override.
+    @IsTest static void config_getWithEmptyRows() {
         HigherLogicConfig.testOverride = null;
+        HigherLogicConfig.mockRows = new List<HL_Webhook_Config__mdt>();
+        HigherLogicConfig.Settings s = HigherLogicConfig.get();
+        System.assertNotEquals(null, s);
+        System.assertEquals(null, s.sharedSecret);
+    }
+
+    @IsTest static void config_getReadsMockedRow() {
+        HigherLogicConfig.testOverride = null;
+        HL_Webhook_Config__mdt row = (HL_Webhook_Config__mdt) JSON.deserialize(
+            '{"Shared_Secret__c":"sek","Account_RecordType_DeveloperName__c":"Higher_Logic_Community","Campaign_Event_RecordType_DeveloperName__c":"Event"}',
+            HL_Webhook_Config__mdt.class
+        );
+        HigherLogicConfig.mockRows = new List<HL_Webhook_Config__mdt>{ row };
+        HigherLogicConfig.Settings s = HigherLogicConfig.get();
+        System.assertEquals('sek', s.sharedSecret);
+        System.assertEquals('Higher_Logic_Community', s.accountRecordTypeDeveloperName);
+        System.assertEquals('Event', s.campaignEventRecordTypeDeveloperName);
+    }
+
+    @IsTest static void config_getFallsBackToRealSoqlWhenMockNull() {
+        HigherLogicConfig.testOverride = null;
+        HigherLogicConfig.mockRows = null;
         HigherLogicConfig.Settings s = HigherLogicConfig.get();
         System.assertNotEquals(null, s);
     }
